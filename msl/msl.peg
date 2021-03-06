@@ -1,0 +1,106 @@
+package msl
+
+type Grammar Peg {
+	Events []Event
+
+	evType string
+	level string
+	pattern string
+	location string
+	line int
+
+	cmdStack []*commandUnion
+	values []string
+	inId int
+}
+
+Grammar <- ((on / unused) _nl?)* !.
+
+unused <- <(!'on' (!_nl .)+ [\r\n \t]*)+> { p.incLine(text) }
+on <- 'on' _ws
+      { p.Events = append(p.Events, Event{Line: p.Line()}) }
+      (on_text / on_join)
+      { p.closeEvent() }
+
+on_text <-  { p.evType = "text" }
+           ((level ":TEXT:" matchtext /	'$' level ":TEXT:" pcre) ':' location ':' _ws? command)
+
+on_join <- { p.evType = "join" }
+	   level ":JOIN:" location_ch ':' _ws? command
+
+level <- <('*' / word)> { p.level = text }
+location <- <('?' / '*' / location_ch)> { p.location = text }
+location_ch <- <('#' word ',')* ('#' word) / '#'> { p.location = text }
+
+command <- { p.pushCommand() }
+           (cmd_block / cmd_if / cmd_while / ('/'? (cmd_var / cmd_timer / cmd_stmt)))
+
+cmd_block <- '{' _wsnl? (command cmd_block_push _wsnl?)+ '}'
+             { p.topCommand().Result = &p.topCommand().Block }
+cmd_block_push <- { p.nCommand(2).Block.Add(p.topCommand().Result) }
+                  { p.popCommand() }
+
+cmd_if <- 'if' _ws expr _ws command
+            (_wsnl? 'elseif' _ws expr _ws command)*
+            (_wsnl? 'else' _ws command)?
+cmd_while <- 'while' _ws expr _ws command
+
+cmd_var <- 'var' _ws var _ws ('=' _ws)? expr
+cmd_timer <- { p.topCommand().Statement.Values = []string{"timer"} }
+             'timer' ( value / _ws '$+' _ws value)  _ws value _ws value _ws command
+	     stmt_end_
+
+cmd_stmt <- value (_ws? value)+ stmt_end_
+
+stmt_end_ <- { p.topCommand().Statement.Values = p.values }
+	     { p.topCommand().Result = &p.topCommand().Statement }
+
+value <- { p.values = append(p.values, "") } value_
+value_ <- ('[' _ws? value_ _ws? ']' /
+         (<(identifier / var / num / token)> { p.addValue(text) }))
+	 	((_ws '[' _ws '$+' _ws value_ _ws ']') /
+		 (_ws '$+' _ws value_))?
+
+arg <- _arg
+_arg <- '[' _ws? value_ _ws? ']' /
+	(<(identifier / var / num / arg_token)> { p.addValue(text) } )
+	((_ws '[' _ws '$+' _ws value_ _ws ']') / (_ws '$+' _ws value_))?
+arg_token <- (!_wsnl ![(,)] .)+
+
+identifier <- { p.inId++ }
+	'$' (id_nick / id_calc / id_rand / id_right / id_replace / id_upper / id_int / id_len / id_nopnick / '+' / 'nick' / 'chan' / 'null' / [1-9][0-9]* '-'?)
+	{ p.inId-- }
+
+id_nick <- 'nick(' _ws? arg _ws? ',' _ws? arg _ws? ')'
+id_calc <- 'calc(' _ws? expr _ws? ')'
+id_nopnick <- 'nopnick(' _ws? arg _ws? ',' _ws? arg _ws? ')'
+id_rand <- 'rand(' _ws? arg _ws? ',' _ws? arg _ws? ')'
+id_right <- 'right(' _ws? arg _ws? ',' _ws? arg _ws? ')'
+id_upper <- 'upper(' _ws? value_ _ws? ')'
+id_len <- 'len(' _ws? value_ _ws? ')'
+id_int <- 'int(' _ws? value_ _ws? ')'
+id_replace <- 'replace(' _ws? arg (_ws? ',' _ws? arg _ws?)+ ')'
+
+args <- '(' (_ws? ',' _ws? arg _ws?)+ ')'
+
+expr <- uexpr exprp?
+exprp <- (_ws? (binary_op _ws? expr) exprp?)
+uexpr <- arg / (unary_op _ws? uexpr)  / '(' _ws? expr _ws? ')'
+binary_op <- '||' / '&&' / rel_op / add_op / mul_op
+rel_op <-  '==' / '!=' / '<=' / '>=' / ('<' !'<') / ('>' !'>') / 'isin' / '!isin'
+add_op <- ('+' !'+') / ('-' !'-') / '|' / '^'
+mul_op <- '*' / '/' / (!var '%') / '<<' / '>>'
+unary_op <- ('+' !'+') / ('-' !'-') / '!'
+
+matchtext <- <('*')? (text / '&')* ('*')?> { p.pattern = text }
+pcre <- <word? '/' (![\r\n/] .)+ '/' word?> { p.pattern = text }
+
+token <- (!_wsnl .)+
+num <- [0-9]+ ('.' [0-9]+)?
+
+var <- '%' word
+text <- (!_nl ![:& ] .)+ / _ws
+word <- [a-zA-Z0-9*]+
+_ws <- [ \t]+
+_nl <- <[\r\n]+> { p.incLine(text) }
+_wsnl <- <[ \t\n\r]+> { p.incLine(text) }
