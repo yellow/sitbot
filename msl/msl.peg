@@ -61,6 +61,7 @@ value_ <- ('[' _ws? value_ _ws? ']' /
 	 	((_ws '[' _ws '$+' _ws value_ _ws ']') /
 		 (_ws '$+' _ws value_))?
 
+args <- '(' (_ws? ',' _ws? arg _ws?)+ ')'
 arg <- _arg
 _arg <- '[' _ws? value_ _ws? ']' /
 	(<(identifier / var / num / arg_token)> { p.addValue(text) } )
@@ -70,18 +71,6 @@ arg_token <- (!_wsnl ![(,)] .)+
 identifier <- { p.inId++ }
 	'$' (id_nick / id_calc / id_rand / id_right / id_replace / id_upper / id_int / id_len / id_nopnick / '+' / 'nick' / 'chan' / 'null' / [1-9][0-9]* '-'?)
 	{ p.inId-- }
-
-id_nick <- 'nick(' _ws? arg _ws? ',' _ws? arg _ws? ')'
-id_calc <- 'calc(' _ws? expr _ws? ')'
-id_nopnick <- 'nopnick(' _ws? arg _ws? ',' _ws? arg _ws? ')'
-id_rand <- 'rand(' _ws? arg _ws? ',' _ws? arg _ws? ')'
-id_right <- 'right(' _ws? arg _ws? ',' _ws? arg _ws? ')'
-id_upper <- 'upper(' _ws? value_ _ws? ')'
-id_len <- 'len(' _ws? value_ _ws? ')'
-id_int <- 'int(' _ws? value_ _ws? ')'
-id_replace <- 'replace(' _ws? arg (_ws? ',' _ws? arg _ws?)+ ')'
-
-args <- '(' (_ws? ',' _ws? arg _ws?)+ ')'
 
 expr <- uexpr exprp?
 exprp <- (_ws? (binary_op _ws? expr) exprp?)
